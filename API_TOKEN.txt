@@ -1,0 +1,14 @@
+European Companies API - Access Token
+=====================================
+
+Your Bearer Token:
+pdl_sk_live_a8f3d9e2b1c4f7a6e5d8c2b9f4a1e7d3
+
+Usage:
+Authorization: Bearer pdl_sk_live_a8f3d9e2b1c4f7a6e5d8c2b9f4a1e7d3
+
+API URL:
+https://fetch-companies-data-production.up.railway.app
+
+Quick Test:
+curl -H "Authorization: Bearer pdl_sk_live_a8f3d9e2b1c4f7a6e5d8c2b9f4a1e7d3" "https://fetch-companies-data-production.up.railway.app/stats"

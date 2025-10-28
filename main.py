@@ -1,4 +1,5 @@
-from fastapi import FastAPI, HTTPException, Query
+from fastapi import FastAPI, HTTPException, Query, Depends, Security
+from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from typing import Optional, List
@@ -6,6 +7,8 @@ import psycopg2
 from psycopg2.extras import RealDictCursor
 import os
 from contextlib import contextmanager
+import secrets
+from rapidfuzz import fuzz
 
 # Database configuration
 DB_CONFIG = {
@@ -17,6 +20,23 @@ DB_CONFIG = {
 }
 
 TABLE_NAME = 'european_companies'
+
+# API Access Token Configuration
+API_ACCESS_TOKEN = os.getenv('API_ACCESS_TOKEN', 'token_here')
+
+# Security scheme
+security = HTTPBearer()
+
+# Verify bearer token
+def verify_token(credentials: HTTPAuthorizationCredentials = Security(security)):
+    """Verify the bearer token"""
+    if credentials.credentials != API_ACCESS_TOKEN:
+        raise HTTPException(
+            status_code=401,
+            detail="Invalid or missing authentication token",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    return credentials.credentials
 
 # Initialize FastAPI app
 app = FastAPI(
@@ -56,6 +76,16 @@ class CompanyResponse(BaseModel):
 class CompaniesListResponse(BaseModel):
     success: bool
     data: List[Company]
+    count: int
+    message: Optional[str]
+
+class FuzzyCompanyMatch(BaseModel):
+    company: Company
+    confidence: float
+
+class FuzzySearchResponse(BaseModel):
+    success: bool
+    data: List[FuzzyCompanyMatch]
     count: int
     message: Optional[str]
 
@@ -101,6 +131,7 @@ async def root():
             "/health": "Health check",
             "/company/domain/{domain}": "Get company by domain",
             "/companies/search": "Search companies",
+            "/companies/fuzzy-search": "Fuzzy search by company name (95% confidence)",
             "/stats": "Get database statistics"
         }
     }
@@ -118,7 +149,7 @@ async def health_check():
         raise HTTPException(status_code=503, detail=f"Database connection failed: {str(e)}")
 
 @app.get("/company/domain/{domain}", response_model=CompanyResponse)
-async def get_company_by_domain(domain: str):
+async def get_company_by_domain(domain: str, token: str = Depends(verify_token)):
     """
     Get company information by domain name
 
@@ -166,7 +197,8 @@ async def search_companies(
     name: Optional[str] = Query(None, description="Search by company name"),
     industry: Optional[str] = Query(None, description="Filter by industry"),
     limit: int = Query(10, ge=1, le=100, description="Number of results to return"),
-    offset: int = Query(0, ge=0, description="Offset for pagination")
+    offset: int = Query(0, ge=0, description="Offset for pagination"),
+    token: str = Depends(verify_token)
 ):
     """
     Search companies with filters
@@ -219,8 +251,67 @@ async def search_companies(
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
 
+@app.get("/companies/fuzzy-search", response_model=FuzzySearchResponse)
+async def fuzzy_search_companies(
+    name: str = Query(..., description="Company name to search for", min_length=1),
+    confidence: float = Query(95.0, ge=0, le=100, description="Minimum confidence threshold (0-100)"),
+    limit: int = Query(10, ge=1, le=100, description="Maximum number of results to return"),
+    token: str = Depends(verify_token)
+):
+    """
+    Fuzzy search companies by name with confidence scoring
+
+    This endpoint uses PostgreSQL's trigram similarity for efficient fuzzy matching.
+    Requires pg_trgm extension to be enabled in the database.
+
+    Example: /companies/fuzzy-search?name=Google&confidence=95
+    """
+    try:
+        with get_db_connection() as conn:
+            cursor = conn.cursor(cursor_factory=RealDictCursor)
+
+            # Convert confidence percentage (0-100) to similarity threshold (0-1)
+            similarity_threshold = confidence / 100.0
+
+            # Use PostgreSQL's trigram similarity for efficient fuzzy matching
+            # similarity() returns a value between 0 and 1
+            query = f"""
+                SELECT *,
+                       similarity(name, %s) as match_score
+                FROM {TABLE_NAME}
+                WHERE name IS NOT NULL
+                  AND similarity(name, %s) >= %s
+                ORDER BY match_score DESC
+                LIMIT %s;
+            """
+
+            cursor.execute(query, (name, name, similarity_threshold, limit))
+            results = cursor.fetchall()
+            cursor.close()
+
+            # Convert results to response format
+            matches = []
+            for row in results:
+                match_score = row.pop('match_score')  # Remove match_score from company data
+                confidence_score = round(match_score * 100, 2)  # Convert to percentage
+
+                matches.append(FuzzyCompanyMatch(
+                    company=Company(**row),
+                    confidence=confidence_score
+                ))
+
+            return FuzzySearchResponse(
+                success=True,
+                data=matches,
+                count=len(matches),
+                message=f"Found {len(matches)} companies matching '{name}' with {confidence}% confidence or higher"
+            )
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
+
 @app.get("/stats")
-async def get_statistics():
+async def get_statistics(token: str = Depends(verify_token)):
     """Get database statistics"""
     try:
         with get_db_connection() as conn:
