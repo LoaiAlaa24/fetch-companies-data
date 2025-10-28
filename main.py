@@ -165,15 +165,18 @@ async def get_company_by_domain(domain: str):
         with get_db_connection() as conn:
             cursor = conn.cursor(cursor_factory=RealDictCursor)
 
-            # Search for company with matching domain
+            # Search for company with exact matching domain
+            # Split on '/' to get only the domain part (before any path)
             query = f"""
                 SELECT * FROM {TABLE_NAME}
-                WHERE LOWER(REPLACE(REPLACE(REPLACE(website, 'http://', ''), 'https://', ''), 'www.', ''))
-                LIKE %s
+                WHERE SPLIT_PART(
+                    LOWER(REPLACE(REPLACE(REPLACE(website, 'http://', ''), 'https://', ''), 'www.', '')),
+                    '/', 1
+                ) = %s
                 LIMIT 1;
             """
 
-            cursor.execute(query, (f"{clean_domain}%",))
+            cursor.execute(query, (clean_domain,))
             result = cursor.fetchone()
             cursor.close()
 
