@@ -254,7 +254,7 @@ async def search_companies(
 @app.get("/companies/fuzzy-search", response_model=FuzzySearchResponse)
 async def fuzzy_search_companies(
     name: str = Query(..., description="Company name to search for", min_length=1),
-    confidence: float = Query(95.0, ge=0, le=100, description="Minimum confidence threshold (0-100)"),
+    confidence: float = Query(90.0, ge=0, le=100, description="Minimum confidence threshold (0-100)"),
     limit: int = Query(10, ge=1, le=100, description="Maximum number of results to return"),
     token: str = Depends(verify_token)
 ):
