@@ -149,7 +149,7 @@ async def health_check():
         raise HTTPException(status_code=503, detail=f"Database connection failed: {str(e)}")
 
 @app.get("/company/domain/{domain}", response_model=CompanyResponse)
-async def get_company_by_domain(domain: str, token: str = Depends(verify_token)):
+async def get_company_by_domain(domain: str):
     """
     Get company information by domain name
 
@@ -197,8 +197,7 @@ async def search_companies(
     name: Optional[str] = Query(None, description="Search by company name"),
     industry: Optional[str] = Query(None, description="Filter by industry"),
     limit: int = Query(10, ge=1, le=100, description="Number of results to return"),
-    offset: int = Query(0, ge=0, description="Offset for pagination"),
-    token: str = Depends(verify_token)
+    offset: int = Query(0, ge=0, description="Offset for pagination")
 ):
     """
     Search companies with filters
@@ -255,8 +254,7 @@ async def search_companies(
 async def fuzzy_search_companies(
     name: str = Query(..., description="Company name to search for", min_length=1),
     confidence: float = Query(90.0, ge=0, le=100, description="Minimum confidence threshold (0-100)"),
-    limit: int = Query(10, ge=1, le=100, description="Maximum number of results to return"),
-    token: str = Depends(verify_token)
+    limit: int = Query(10, ge=1, le=100, description="Maximum number of results to return")
 ):
     """
     Fuzzy search companies by name with confidence scoring
@@ -311,7 +309,7 @@ async def fuzzy_search_companies(
         raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
 
 @app.get("/stats")
-async def get_statistics(token: str = Depends(verify_token)):
+async def get_statistics():
     """Get database statistics"""
     try:
         with get_db_connection() as conn:
