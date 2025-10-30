@@ -104,14 +104,20 @@ def get_db_connection():
         if conn:
             conn.close()
 
-# Utility function to extract domain from website
-def extract_domain(website: str) -> str:
-    """Extract domain from website URL"""
-    if not website:
+# Utility function to extract domain from website or email
+def extract_domain(input_str: str) -> str:
+    """Extract domain from website URL or email address"""
+    if not input_str:
         return ""
 
+    # Check if it's an email address
+    if '@' in input_str:
+        # Extract domain part after @
+        domain = input_str.split('@')[-1]
+        return domain.lower().strip()
+
     # Remove protocol
-    domain = website.replace('http://', '').replace('https://', '')
+    domain = input_str.replace('http://', '').replace('https://', '')
 
     # Remove www.
     domain = domain.replace('www.', '')
@@ -151,16 +157,16 @@ async def health_check():
 @app.get("/company/domain/{domain}", response_model=CompanyResponse)
 async def get_company_by_domain(domain: str):
     """
-    Get company information by domain name
+    Get company information by domain name or email address
 
-    Example: /company/domain/example.com
+    Example: /company/domain/example.com or /company/domain/user@example.com
     """
     try:
-        # Clean the domain
+        # Clean the domain (handles both domains and emails)
         clean_domain = extract_domain(domain)
 
         if not clean_domain:
-            raise HTTPException(status_code=400, detail="Invalid domain")
+            raise HTTPException(status_code=400, detail="Invalid domain or email")
 
         with get_db_connection() as conn:
             cursor = conn.cursor(cursor_factory=RealDictCursor)
